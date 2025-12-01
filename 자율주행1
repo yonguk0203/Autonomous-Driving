@@ -1,0 +1,92 @@
+import rclpy, time
+from rclpy.node import Node
+from geometry_msgs.msg import Twist, Vector3
+from std_msgs.msg import Bool
+
+AUTONOMOUS, VISION_FOLLOW, HOLD_STOP = 0, 1, 2
+
+class Supervisor(Node):
+    def __init__(self):
+        super().__init__('tb3_supervisor')
+        # 파라미터
+        self.declare_parameter('lin_speed', 0.18)   
+        self.declare_parameter('ang_gain', 1.2) 
+        self.declare_parameter('resume_wait', 10.0) 
+        self.declare_parameter('max_lin', 0.22)
+        self.declare_parameter('max_ang', 2.5)
+
+        self.lin_speed = float(self.get_parameter('lin_speed').value)
+        self.ang_k     = float(self.get_parameter('ang_gain').value)
+        self.resume_wait = float(self.get_parameter('resume_wait').value)
+        self.max_lin   = float(self.get_parameter('max_lin').value)
+        self.max_ang   = float(self.get_parameter('max_ang').value)
+
+        self.sub_auto   = self.create_subscription(Twist, '/cmd_vel_auto', self.on_auto, 10)
+        self.sub_vact   = self.create_subscription(Bool,  'vision_active', self.on_vactive, 10)
+        self.sub_vtgt   = self.create_subscription(Vector3,'vision_target', self.on_vtarget, 10)
+        self.sub_dstop  = self.create_subscription(Bool,  'depth_stop', self.on_stop, 10)
+        self.sub_ustop  = self.create_subscription(Bool,  'ultra_stop', self.on_stop, 10)
+
+        self.pub_cmd    = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        self.state = AUTONOMOUS
+        self._auto_cmd = Twist()
+        self._vision_active = False
+        self._heading = 0.0
+        self._last_block = False
+        self._block = False
+        self._unblock_time = None
+
+        self.create_timer(0.05, self.loop)  
+
+    def on_auto(self, msg: Twist):
+        self._auto_cmd = msg
+
+    def on_vactive(self, msg: Bool):
+        self._vision_active = msg.data
+
+    def on_vtarget(self, msg: Vector3):
+        self._heading = msg.x  
+
+    def on_stop(self, msg: Bool):
+        self._block = msg.data or self._block 
+        if not msg.data:
+
+    def loop(self):
+        if self._block:
+            self.state = HOLD_STOP
+            self._unblock_time = None
+        else:
+            if self.state == HOLD_STOP:
+                if self._unblock_time is None:
+                    self._unblock_time = time.time()
+                if (time.time() - self._unblock_time) >= self.resume_wait:
+                    self.state = AUTONOMOUS
+
+            elif self.state in (AUTONOMOUS, VISION_FOLLOW):
+                self.state = VISION_FOLLOW if self._vision_active else AUTONOMOUS
+
+        self._last_block = self._block
+        self._block = False
+
+        out = Twist()
+        if self.state == HOLD_STOP:
+            pass
+        elif self.state == AUTONOMOUS:
+            out = self._auto_cmd
+        elif self.state == VISION_FOLLOW:
+
+            out.linear.x  = self.lin_speed
+            out.angular.z = max(-self.max_ang, min(self.max_ang, self.ang_k * (-self._heading)))
+        out.linear.x  = max(-self.max_lin, min(self.max_lin, out.linear.x))
+        out.angular.z = max(-self.max_ang, min(self.max_ang, out.angular.z))
+
+        self.pub_cmd.publish(out)
+
+def main():
+    rclpy.init()
+    rclpy.spin(Supervisor())
+    rclpy.shutdown()
+
+if __name__=='__main__':
+    main()
