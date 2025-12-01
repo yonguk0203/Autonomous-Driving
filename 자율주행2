@@ -1,0 +1,59 @@
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+def generate_launch_description():
+    realsense = Node(
+        package='realsense2_camera',
+        executable='rs_launch.py',
+        output='screen',
+        parameters=[{
+            'align_depth': True,
+            'rgb_camera.profile': '640x480x30',
+            'depth_module.profile': '640x480x30'
+        }]
+    )
+
+    yolo = Node(
+        package='your_pkg',
+        executable='yolo_palm_follow',
+        output='screen',
+        parameters=[{
+            'model_path': '/home/hong/yolov8_trained_model/runs/detect/train/weights/best.pt',
+            'target_class': 'hand',
+            'conf_thres': 0.5
+        }]
+    )
+
+    depth = Node(
+        package='your_pkg',
+        executable='depth_stop',
+        output='screen',
+        parameters=[{
+            'stop_distance': 0.45,
+            'hold_time': 0.5
+        }]
+    )
+
+    ultra = Node(
+        package='your_pkg',
+        executable='ultra_stop_node',
+        output='screen',
+        parameters=[{
+            'topic': '/ultrasonic/range',
+            'stop_distance': 0.25,
+            'hold_time': 0.5
+        }]
+    )
+
+    sup = Node(
+        package='your_pkg',
+        executable='tb3_supervisor',
+        output='screen',
+        parameters=[{
+            'lin_speed': 0.18,
+            'ang_gain': 1.2,
+            'resume_wait': 10.0
+        }]
+    )
+
+    return LaunchDescription([realsense, yolo, depth, ultra, sup])
