@@ -1,0 +1,31 @@
+import rclpy, time
+from rclpy.node import Node
+from sensor_msgs.msg import Range
+from std_msgs.msg import Bool
+
+class UltraStop(Node):
+    def __init__(self):
+        super().__init__('ultra_stop_node')
+        self.declare_parameter('topic', '/ultrasonic/range')
+        self.declare_parameter('stop_distance', 0.25)
+        self.declare_parameter('hold_time', 0.5)
+
+        self.th = float(self.get_parameter('stop_distance').value)
+        self.hold = float(self.get_parameter('hold_time').value)
+        self._last = 0.0
+
+        self.pub = self.create_publisher(Bool, 'ultra_stop', 10)
+        self.create_subscription(Range, self.get_parameter('topic').value, self.on_range, 10)
+        self.create_timer(0.05, self.tick)
+
+    def on_range(self, msg: Range):
+        if msg.range > 0.0 and msg.range < self.th:
+            self._last = time.time()
+
+    def tick(self):
+        self.pub.publish(Bool(data=(time.time()-self._last) < self.hold))
+
+def main():
+    rclpy.init(); rclpy.spin(UltraStop()); rclpy.shutdown()
+if __name__=='__main__':
+    main()
